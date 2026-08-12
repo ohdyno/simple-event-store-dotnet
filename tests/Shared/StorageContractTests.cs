@@ -14,7 +14,12 @@ public abstract class StorageContractTests : IAsyncLifetime
     [Fact]
     public async Task Creates_a_new_stream_at_version_zero()
     {
-        var record = await Storage.AppendAsync("orders-1", StreamVersion.Undefined, "placed", "{\"id\": 1}");
+        var record = await Storage.AppendAsync(
+            "orders-1",
+            StreamVersion.Undefined,
+            "placed",
+            "{\"id\": 1}",
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(RecordId.First, record.Id);
         Assert.Equal(StreamVersion.First, record.Version);
@@ -28,20 +33,46 @@ public abstract class StorageContractTests : IAsyncLifetime
     public async Task Rejects_duplicate_missing_and_stale_stream_operations()
     {
         await Assert.ThrowsAsync<StreamNotFoundException>(() =>
-            Storage.AppendAsync("missing", StreamVersion.First, "event", "{}").AsTask());
+            Storage.AppendAsync(
+                "missing",
+                StreamVersion.First,
+                "event",
+                "{}",
+                TestContext.Current.CancellationToken).AsTask());
 
-        await Storage.AppendAsync("orders-1", StreamVersion.Undefined, "placed", "{}");
+        await Storage.AppendAsync(
+            "orders-1",
+            StreamVersion.Undefined,
+            "placed",
+            "{}",
+            TestContext.Current.CancellationToken);
         await Assert.ThrowsAsync<DuplicateStreamException>(() =>
-            Storage.AppendAsync("orders-1", StreamVersion.Undefined, "event", "{}").AsTask());
-        await Storage.AppendAsync("orders-1", StreamVersion.First, "event", "{}");
+            Storage.AppendAsync(
+                "orders-1",
+                StreamVersion.Undefined,
+                "event",
+                "{}",
+                TestContext.Current.CancellationToken).AsTask());
+        await Storage.AppendAsync(
+            "orders-1",
+            StreamVersion.First,
+            "event",
+            "{}",
+            TestContext.Current.CancellationToken);
         await Assert.ThrowsAsync<StaleStreamVersionException>(() =>
-            Storage.AppendAsync("orders-1", StreamVersion.First, "event", "{}").AsTask());
+            Storage.AppendAsync(
+                "orders-1",
+                StreamVersion.First,
+                "event",
+                "{}",
+                TestContext.Current.CancellationToken).AsTask());
         await Assert.ThrowsAsync<StreamNotFoundException>(() =>
             Storage.RetrieveAsync(
                 "missing",
                 Array.Empty<string>(),
                 StreamVersion.Undefined,
-                StreamVersion.Maximum).AsTask());
+                StreamVersion.Maximum,
+                TestContext.Current.CancellationToken).AsTask());
     }
 
     [Fact]
@@ -51,7 +82,8 @@ public abstract class StorageContractTests : IAsyncLifetime
             RecordId.Undefined,
             RecordId.Maximum,
             Array.Empty<StreamName>(),
-            Array.Empty<string>());
+            Array.Empty<string>(),
+            TestContext.Current.CancellationToken);
 
         Assert.Empty(result.Records);
         Assert.Equal(StoredRecord.Empty, result.LatestRecord);
@@ -66,7 +98,8 @@ public abstract class StorageContractTests : IAsyncLifetime
             "orders-1",
             Array.Empty<string>(),
             records[0].Version,
-            records[1].Version);
+            records[1].Version,
+            TestContext.Current.CancellationToken);
 
         Assert.Equal([records[1]], result.Records);
         Assert.Equal(records[^1], result.LatestRecord);
@@ -75,7 +108,8 @@ public abstract class StorageContractTests : IAsyncLifetime
             "orders-1",
             Array.Empty<string>(),
             records[1].Version,
-            records[0].Version);
+            records[0].Version,
+            TestContext.Current.CancellationToken);
         Assert.Empty(edge.Records);
         Assert.Equal(records[^1], edge.LatestRecord);
     }
@@ -89,12 +123,14 @@ public abstract class StorageContractTests : IAsyncLifetime
             "orders-1",
             ["renamed"],
             StreamVersion.Undefined,
-            StreamVersion.Maximum);
+            StreamVersion.Maximum,
+            TestContext.Current.CancellationToken);
         var excluded = await Storage.RetrieveAsync(
             "orders-1",
             ["unknown"],
             StreamVersion.Undefined,
-            StreamVersion.Maximum);
+            StreamVersion.Maximum,
+            TestContext.Current.CancellationToken);
 
         Assert.Equal([records[1]], selected.Records);
         Assert.Empty(excluded.Records);
@@ -110,12 +146,14 @@ public abstract class StorageContractTests : IAsyncLifetime
             RecordId.Undefined,
             RecordId.Maximum,
             Array.Empty<StreamName>(),
-            Array.Empty<string>());
+            Array.Empty<string>(),
+            TestContext.Current.CancellationToken);
         var combined = await Storage.RetrieveAsync(
             records[0].Id,
             records[4].Id,
             ["orders-1"],
-            ["renamed"]);
+            ["renamed"],
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(records, all.Records);
         Assert.Equal(records[^1], all.LatestRecord);
@@ -138,17 +176,20 @@ public abstract class StorageContractTests : IAsyncLifetime
             RecordId.Undefined,
             RecordId.Maximum,
             ["orders-2"],
-            Array.Empty<string>());
+            Array.Empty<string>(),
+            TestContext.Current.CancellationToken);
         var equal = await Storage.RetrieveAsync(
             records[1].Id,
             records[1].Id,
             Array.Empty<StreamName>(),
-            Array.Empty<string>());
+            Array.Empty<string>(),
+            TestContext.Current.CancellationToken);
         var reversed = await Storage.RetrieveAsync(
             records[2].Id,
             records[1].Id,
             Array.Empty<StreamName>(),
-            Array.Empty<string>());
+            Array.Empty<string>(),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(records.Where(record => record.StreamName == new StreamName("orders-2")), oneStream.Records);
         Assert.Empty(equal.Records);
@@ -160,7 +201,12 @@ public abstract class StorageContractTests : IAsyncLifetime
     [Fact]
     public async Task Exactly_one_parallel_append_wins_without_versions_or_id_gaps()
     {
-        await Storage.AppendAsync("orders-1", StreamVersion.Undefined, "placed", "{}");
+        await Storage.AppendAsync(
+            "orders-1",
+            StreamVersion.Undefined,
+            "placed",
+            "{}",
+            TestContext.Current.CancellationToken);
 
         var contenders = Enumerable.Range(0, 24).Select(async index =>
         {
@@ -170,7 +216,8 @@ public abstract class StorageContractTests : IAsyncLifetime
                     "orders-1",
                     StreamVersion.First,
                     "renamed",
-                    $"{{\"index\":{index}}}"), Exception: (Exception?)null);
+                    $"{{\"index\":{index}}}",
+                    TestContext.Current.CancellationToken), Exception: (Exception?)null);
             }
             catch (Exception exception)
             {
@@ -186,7 +233,8 @@ public abstract class StorageContractTests : IAsyncLifetime
             "orders-1",
             Array.Empty<string>(),
             StreamVersion.Undefined,
-            StreamVersion.Maximum);
+            StreamVersion.Maximum,
+            TestContext.Current.CancellationToken);
         Assert.Equal([0L, 1L], stored.Records.Select(static record => record.Version.Value));
         Assert.Equal([1L, 2L], stored.Records.Select(static record => record.Id.Value));
     }
@@ -203,9 +251,24 @@ public abstract class StorageContractTests : IAsyncLifetime
 
     private async Task<StoredRecord[]> SeedOneStreamAsync()
     {
-        var first = await Storage.AppendAsync("orders-1", StreamVersion.Undefined, "placed", "{}");
-        var second = await Storage.AppendAsync("orders-1", first.Version, "renamed", "{}");
-        var third = await Storage.AppendAsync("orders-1", second.Version, "placed", "{}");
+        var first = await Storage.AppendAsync(
+            "orders-1",
+            StreamVersion.Undefined,
+            "placed",
+            "{}",
+            TestContext.Current.CancellationToken);
+        var second = await Storage.AppendAsync(
+            "orders-1",
+            first.Version,
+            "renamed",
+            "{}",
+            TestContext.Current.CancellationToken);
+        var third = await Storage.AppendAsync(
+            "orders-1",
+            second.Version,
+            "placed",
+            "{}",
+            TestContext.Current.CancellationToken);
         return [first, second, third];
     }
 
@@ -219,7 +282,12 @@ public abstract class StorageContractTests : IAsyncLifetime
             {
                 var current = versions.GetValueOrDefault(stream, StreamVersion.Undefined);
                 var type = version == 1 ? "renamed" : "placed";
-                var record = await Storage.AppendAsync(stream, current, type, "{}");
+                var record = await Storage.AppendAsync(
+                    stream,
+                    current,
+                    type,
+                    "{}",
+                    TestContext.Current.CancellationToken);
                 versions[stream] = record.Version;
                 records.Add(record);
             }

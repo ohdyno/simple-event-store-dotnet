@@ -19,7 +19,10 @@ public sealed class EventStoreTests
             observed.Add(record);
         });
 
-        var result = await store.SaveAsync(new OrderPlaced("first"), aggregate);
+        var result = await store.SaveAsync(
+            new OrderPlaced("first"),
+            aggregate,
+            TestContext.Current.CancellationToken);
 
         Assert.Same(aggregate, result);
         Assert.Equal(StreamVersion.First, aggregate.Version);
@@ -31,8 +34,8 @@ public sealed class EventStoreTests
     {
         using var store = CreateStore();
         var aggregate = new OrderAggregate("orders-1");
-        await store.SaveAsync(new OrderPlaced("first"), aggregate);
-        await store.SaveAsync(new OrderRenamed("second"), aggregate);
+        await store.SaveAsync(new OrderPlaced("first"), aggregate, TestContext.Current.CancellationToken);
+        await store.SaveAsync(new OrderRenamed("second"), aggregate, TestContext.Current.CancellationToken);
 
         StoredRecord? replayed = null;
         using var subscription = store.Records.Take(1).Subscribe(record => replayed = record);
@@ -45,12 +48,18 @@ public sealed class EventStoreTests
     public async Task Failed_save_is_translated_and_not_published()
     {
         using var store = CreateStore();
-        await store.SaveAsync(new OrderPlaced("first"), new OrderAggregate("orders-1"));
+        await store.SaveAsync(
+            new OrderPlaced("first"),
+            new OrderAggregate("orders-1"),
+            TestContext.Current.CancellationToken);
         var observed = new List<StoredRecord>();
         using var subscription = store.Records.Subscribe(observed.Add);
 
         var exception = await Assert.ThrowsAsync<StaleAggregateStateException>(() =>
-            store.SaveAsync(new OrderPlaced("duplicate"), new OrderAggregate("orders-1")));
+            store.SaveAsync(
+                new OrderPlaced("duplicate"),
+                new OrderAggregate("orders-1"),
+                TestContext.Current.CancellationToken));
 
         Assert.IsType<DuplicateStreamException>(exception.InnerException);
         Assert.Single(observed);
@@ -64,7 +73,10 @@ public sealed class EventStoreTests
         using var subscription = store.Records.Subscribe(observed.Add);
 
         await Assert.ThrowsAsync<DomainFailureException>(() =>
-            store.SaveAsync(new OrderPlaced("first"), new ThrowingAggregate("orders-1")));
+            store.SaveAsync(
+                new OrderPlaced("first"),
+                new ThrowingAggregate("orders-1"),
+                TestContext.Current.CancellationToken));
 
         Assert.Empty(observed);
     }
@@ -74,11 +86,11 @@ public sealed class EventStoreTests
     {
         using var store = CreateStore();
         var saved = new OrderAggregate("orders-1");
-        await store.SaveAsync(new OrderPlaced("first"), saved);
-        await store.SaveAsync(new OrderRenamed("second"), saved);
+        await store.SaveAsync(new OrderPlaced("first"), saved, TestContext.Current.CancellationToken);
+        await store.SaveAsync(new OrderRenamed("second"), saved, TestContext.Current.CancellationToken);
 
         var aggregate = new RenameOnlyAggregate("orders-1");
-        var result = await store.EnrichAsync(aggregate);
+        var result = await store.EnrichAsync(aggregate, TestContext.Current.CancellationToken);
 
         Assert.Same(aggregate, result);
         Assert.True(aggregate.IsEnriched);
@@ -90,9 +102,14 @@ public sealed class EventStoreTests
     public async Task Filtered_aggregate_advances_to_latest_without_becoming_enriched()
     {
         using var store = CreateStore();
-        await store.SaveAsync(new OrderPlaced("first"), new OrderAggregate("orders-1"));
+        await store.SaveAsync(
+            new OrderPlaced("first"),
+            new OrderAggregate("orders-1"),
+            TestContext.Current.CancellationToken);
 
-        var aggregate = await store.EnrichAsync(new RenameOnlyAggregate("orders-1"));
+        var aggregate = await store.EnrichAsync(
+            new RenameOnlyAggregate("orders-1"),
+            TestContext.Current.CancellationToken);
 
         Assert.False(aggregate.IsEnriched);
         Assert.Equal(StreamVersion.First, aggregate.Version);
@@ -104,7 +121,7 @@ public sealed class EventStoreTests
         using var store = CreateStore();
 
         var exception = await Assert.ThrowsAsync<StreamNotFoundException>(() =>
-            store.EnrichAsync(new OrderAggregate("missing")));
+            store.EnrichAsync(new OrderAggregate("missing"), TestContext.Current.CancellationToken));
 
         Assert.Equal(new StreamName("missing"), exception.StreamName);
         Assert.IsType<StreamNotFoundException>(exception.InnerException);
@@ -115,10 +132,10 @@ public sealed class EventStoreTests
     {
         using var store = CreateStore();
         var aggregate = new OrderAggregate("orders-1");
-        await store.SaveAsync(new OrderPlaced("first"), aggregate);
-        await store.SaveAsync(new OrderRenamed("second"), aggregate);
+        await store.SaveAsync(new OrderPlaced("first"), aggregate, TestContext.Current.CancellationToken);
+        await store.SaveAsync(new OrderRenamed("second"), aggregate, TestContext.Current.CancellationToken);
 
-        var projection = await store.EnrichAsync(new OrderProjection());
+        var projection = await store.EnrichAsync(new OrderProjection(), TestContext.Current.CancellationToken);
 
         Assert.True(projection.IsEnriched);
         Assert.Equal(["first", "second"], projection.Names);
@@ -131,10 +148,18 @@ public sealed class EventStoreTests
     public async Task Projection_filters_by_stream_and_advances_past_excluded_records()
     {
         using var store = CreateStore();
-        await store.SaveAsync(new OrderPlaced("one"), new OrderAggregate("orders-1"));
-        await store.SaveAsync(new OrderPlaced("two"), new OrderAggregate("orders-2"));
+        await store.SaveAsync(
+            new OrderPlaced("one"),
+            new OrderAggregate("orders-1"),
+            TestContext.Current.CancellationToken);
+        await store.SaveAsync(
+            new OrderPlaced("two"),
+            new OrderAggregate("orders-2"),
+            TestContext.Current.CancellationToken);
 
-        var projection = await store.EnrichAsync(new OneStreamProjection("orders-2"));
+        var projection = await store.EnrichAsync(
+            new OneStreamProjection("orders-2"),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(["two"], projection.Names);
         Assert.Equal(new RecordId(2), projection.LastRecordId);
@@ -144,9 +169,12 @@ public sealed class EventStoreTests
     public async Task Projection_with_no_matching_type_still_advances_checkpoint()
     {
         using var store = CreateStore();
-        await store.SaveAsync(new OrderPlaced("one"), new OrderAggregate("orders-1"));
+        await store.SaveAsync(
+            new OrderPlaced("one"),
+            new OrderAggregate("orders-1"),
+            TestContext.Current.CancellationToken);
 
-        var projection = await store.EnrichAsync(new RenameProjection());
+        var projection = await store.EnrichAsync(new RenameProjection(), TestContext.Current.CancellationToken);
 
         Assert.False(projection.IsEnriched);
         Assert.Equal(RecordId.First, projection.LastRecordId);

@@ -67,7 +67,10 @@ public sealed class SerializationAndCompositionTests
         StoredRecord? stored = null;
         using var subscription = store.Records.Subscribe(new CallbackObserver<StoredRecord>(record => stored = record));
 
-        await store.SaveAsync(new SampleEvent("value", 42), new SampleAggregate("sample-1"));
+        await store.SaveAsync(
+            new SampleEvent("value", 42),
+            new SampleAggregate("sample-1"),
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(stored);
         Assert.Contains("\"SomeValue\"", stored.EventContent, StringComparison.Ordinal);
@@ -93,9 +96,14 @@ public sealed class SerializationAndCompositionTests
         using var store = new SimpleEventStoreBuilder()
             .RegisterEvent<InterfaceEvent>("interface-event")
             .Build();
-        await store.SaveAsync(new InterfaceEvent("handled"), new InterfaceAggregate("stream"));
+        await store.SaveAsync(
+            new InterfaceEvent("handled"),
+            new InterfaceAggregate("stream"),
+            TestContext.Current.CancellationToken);
 
-        var projection = await store.EnrichAsync(new InterfaceProjection());
+        var projection = await store.EnrichAsync(
+            new InterfaceProjection(),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(["handled"], projection.Values);
     }

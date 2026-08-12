@@ -12,21 +12,21 @@ public sealed class PostgreSqlStorageContractTests(PostgreSqlFixture fixture) : 
 
     public override async ValueTask InitializeAsync()
     {
-        await fixture.Storage.InitializeSchemaAsync();
+        await fixture.Storage.InitializeSchemaAsync(TestContext.Current.CancellationToken);
         await using var command = fixture.DataSource.CreateCommand(
             "TRUNCATE TABLE eventsource.events RESTART IDENTITY;");
-        await command.ExecuteNonQueryAsync();
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
     public async Task Schema_initialization_is_explicit_and_idempotent()
     {
-        await fixture.Storage.InitializeSchemaAsync();
-        await fixture.Storage.InitializeSchemaAsync();
+        await fixture.Storage.InitializeSchemaAsync(TestContext.Current.CancellationToken);
+        await fixture.Storage.InitializeSchemaAsync(TestContext.Current.CancellationToken);
 
         await using var command = fixture.DataSource.CreateCommand(
             "SELECT to_regclass('eventsource.events')::text;");
-        var table = await command.ExecuteScalarAsync();
+        var table = await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal("eventsource.events", table);
     }
@@ -48,10 +48,10 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        await _container.StartAsync();
+        await _container.StartAsync(TestContext.Current.CancellationToken);
         DataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
         Storage = new PostgreSqlEventStorage(DataSource);
-        await Storage.InitializeSchemaAsync();
+        await Storage.InitializeSchemaAsync(TestContext.Current.CancellationToken);
     }
 
     public async ValueTask DisposeAsync()
