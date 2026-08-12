@@ -123,6 +123,9 @@ public sealed class PostgreSqlEventStorage : IEventStorage
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var latest = await GetLatestStreamRecordAsync(connection, streamName, cancellationToken).ConfigureAwait(false)
                      ?? throw new StreamNotFoundException(streamName);
+        var effectiveEndVersion = inclusiveEndVersion <= latest.Version
+            ? inclusiveEndVersion
+            : latest.Version;
 
         const string sql = """
             SELECT id, stream_name, event_type, event_content::text, version, inserted_on
@@ -136,7 +139,7 @@ public sealed class PostgreSqlEventStorage : IEventStorage
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("stream_name", streamName.Value);
         command.Parameters.AddWithValue("exclusive_start", exclusiveStartVersion.Value);
-        command.Parameters.AddWithValue("inclusive_end", inclusiveEndVersion.Value);
+        command.Parameters.AddWithValue("inclusive_end", effectiveEndVersion.Value);
         command.Parameters.AddWithValue("event_types", NpgsqlDbType.Array | NpgsqlDbType.Text, eventTypes.ToArray());
         var records = await ReadRecordsAsync(command, cancellationToken).ConfigureAwait(false);
         return new RetrievedRecords(records, latest);
@@ -153,6 +156,12 @@ public sealed class PostgreSqlEventStorage : IEventStorage
         ArgumentNullException.ThrowIfNull(eventTypes);
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var latest = await GetLatestRecordAsync(connection, cancellationToken).ConfigureAwait(false);
+        if (latest is null)
+        {
+            return RetrievedRecords.Empty;
+        }
+
+        var effectiveEndId = inclusiveEndId <= latest.Id ? inclusiveEndId : latest.Id;
 
         const string sql = """
             SELECT id, stream_name, event_type, event_content::text, version, inserted_on
@@ -165,14 +174,14 @@ public sealed class PostgreSqlEventStorage : IEventStorage
             """;
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("exclusive_start", exclusiveStartId.Value);
-        command.Parameters.AddWithValue("inclusive_end", inclusiveEndId.Value);
+        command.Parameters.AddWithValue("inclusive_end", effectiveEndId.Value);
         command.Parameters.AddWithValue(
             "stream_names",
             NpgsqlDbType.Array | NpgsqlDbType.Text,
             streamNames.Select(static name => name.Value).ToArray());
         command.Parameters.AddWithValue("event_types", NpgsqlDbType.Array | NpgsqlDbType.Text, eventTypes.ToArray());
         var records = await ReadRecordsAsync(command, cancellationToken).ConfigureAwait(false);
-        return new RetrievedRecords(records, latest ?? StoredRecord.Empty);
+        return new RetrievedRecords(records, latest);
     }
 
     private static async Task<StreamVersion?> GetLatestVersionAsync(
