@@ -38,7 +38,7 @@ public abstract class StorageContractTests : IAsyncLifetime
                 StreamVersion.First,
                 "event",
                 "{}",
-                TestContext.Current.CancellationToken).AsTask());
+                TestContext.Current.CancellationToken));
 
         await Storage.AppendAsync(
             "orders-1",
@@ -52,7 +52,7 @@ public abstract class StorageContractTests : IAsyncLifetime
                 StreamVersion.Undefined,
                 "event",
                 "{}",
-                TestContext.Current.CancellationToken).AsTask());
+                TestContext.Current.CancellationToken));
         await Storage.AppendAsync(
             "orders-1",
             StreamVersion.First,
@@ -65,14 +65,14 @@ public abstract class StorageContractTests : IAsyncLifetime
                 StreamVersion.First,
                 "event",
                 "{}",
-                TestContext.Current.CancellationToken).AsTask());
+                TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<StreamNotFoundException>(() =>
             Storage.RetrieveAsync(
                 "missing",
                 Array.Empty<string>(),
                 StreamVersion.Undefined,
                 StreamVersion.Maximum,
-                TestContext.Current.CancellationToken).AsTask());
+                TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -246,7 +246,7 @@ public abstract class StorageContractTests : IAsyncLifetime
         await source.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            Storage.AppendAsync("orders-1", StreamVersion.Undefined, "placed", "{}", source.Token).AsTask());
+            Storage.AppendAsync("orders-1", StreamVersion.Undefined, "placed", "{}", source.Token));
     }
 
     private async Task<StoredRecord[]> SeedOneStreamAsync()
@@ -295,9 +295,4 @@ public abstract class StorageContractTests : IAsyncLifetime
 
         return records.ToArray();
     }
-}
-
-internal static class TaskCompatibilityExtensions
-{
-    public static Task<T> AsTask<T>(this Task<T> task) => task;
 }
