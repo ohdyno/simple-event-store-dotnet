@@ -1,3 +1,4 @@
+using System.Reactive.Disposables;
 using System.Reactive.Subjects;
 
 namespace SimpleEventStore;
@@ -22,10 +23,14 @@ public sealed class EventStore : IDisposable
         _converter = converter ?? throw new ArgumentNullException(nameof(converter));
         _applier = applier ?? throw new ArgumentNullException(nameof(applier));
         _records = Subject.Synchronize(new ReplaySubject<StoredRecord>(1));
+        Records = new ObserverFaultIsolatingObservable<StoredRecord>(_records);
     }
 
-    /// <summary>Publishes each successfully saved record and replays the latest one to late subscribers.</summary>
-    public IObservable<StoredRecord> Records => _records;
+    /// <summary>
+    /// Publishes each successfully saved record and replays the latest one to late subscribers.
+    /// An observer that throws is detached without affecting saves or other observers.
+    /// </summary>
+    public IObservable<StoredRecord> Records { get; }
 
     public async Task<TAggregate> SaveAsync<TAggregate>(
         IEvent @event,
@@ -162,4 +167,47 @@ public sealed class EventStore : IDisposable
 
     private static RecordDetails ToDetails(StoredRecord record) =>
         new(record.StreamName, record.Version, record.Id, record.InsertedOn);
+
+    private sealed class ObserverFaultIsolatingObservable<T>(IObservable<T> source) : IObservable<T>
+    {
+        public IDisposable Subscribe(IObserver<T> observer)
+        {
+            ArgumentNullException.ThrowIfNull(observer);
+            var subscription = new SingleAssignmentDisposable();
+            var faultIsolatingObserver = new ObserverFaultIsolatingObserver<T>(observer, subscription);
+            try
+            {
+                subscription.Disposable = source.Subscribe(faultIsolatingObserver);
+                return subscription;
+            }
+            catch
+            {
+                subscription.Dispose();
+                throw;
+            }
+        }
+    }
+
+    private sealed class ObserverFaultIsolatingObserver<T>(
+        IObserver<T> observer,
+        SingleAssignmentDisposable subscription) : IObserver<T>
+    {
+        public void OnCompleted() => Notify(observer.OnCompleted);
+
+        public void OnError(Exception error) => Notify(() => observer.OnError(error));
+
+        public void OnNext(T value) => Notify(() => observer.OnNext(value));
+
+        private void Notify(Action notification)
+        {
+            try
+            {
+                notification();
+            }
+            catch (Exception)
+            {
+                subscription.Dispose();
+            }
+        }
+    }
 }

@@ -45,6 +45,55 @@ public sealed class EventStoreTests
     }
 
     [Fact]
+    public async Task Throwing_record_subscriber_is_detached_without_affecting_saves_or_other_subscribers()
+    {
+        var storage = new InMemoryEventStorage();
+        using var store = CreateStore(storage);
+        var aggregate = new OrderAggregate("orders-1");
+        var failingCalls = 0;
+        var observed = new List<StoredRecord>();
+        using var failingSubscription = store.Records.Subscribe(_ =>
+        {
+            failingCalls++;
+            throw new DomainFailureException();
+        });
+        using var healthySubscription = store.Records.Subscribe(observed.Add);
+
+        await store.SaveAsync(new OrderPlaced("first"), aggregate, TestContext.Current.CancellationToken);
+        await store.SaveAsync(new OrderRenamed("second"), aggregate, TestContext.Current.CancellationToken);
+
+        var persisted = await storage.RetrieveAsync(
+            "orders-1",
+            Array.Empty<string>(),
+            StreamVersion.Undefined,
+            StreamVersion.Maximum,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(1, failingCalls);
+        Assert.Equal(persisted.Records, observed);
+        Assert.Equal(new StreamVersion(1), aggregate.Version);
+        Assert.Equal("second", aggregate.Name);
+        Assert.True(aggregate.IsEnriched);
+    }
+
+    [Fact]
+    public async Task Throwing_late_subscriber_is_detached_during_replay()
+    {
+        using var store = CreateStore();
+        var aggregate = new OrderAggregate("orders-1");
+        await store.SaveAsync(new OrderPlaced("first"), aggregate, TestContext.Current.CancellationToken);
+        var failingCalls = 0;
+
+        using var subscription = store.Records.Subscribe(_ =>
+        {
+            failingCalls++;
+            throw new DomainFailureException();
+        });
+        await store.SaveAsync(new OrderRenamed("second"), aggregate, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, failingCalls);
+    }
+
+    [Fact]
     public async Task Failed_save_is_translated_and_not_published()
     {
         using var store = CreateStore();
@@ -199,10 +248,18 @@ public sealed class EventStoreTests
         Assert.Empty(observed);
     }
 
-    private static EventStore CreateStore() => new SimpleEventStoreBuilder()
-        .RegisterEvent<OrderPlaced>("order-placed")
-        .RegisterEvent<OrderRenamed>("order-renamed")
-        .Build();
+    private static EventStore CreateStore(IEventStorage? storage = null)
+    {
+        var builder = new SimpleEventStoreBuilder()
+            .RegisterEvent<OrderPlaced>("order-placed")
+            .RegisterEvent<OrderRenamed>("order-renamed");
+        if (storage is not null)
+        {
+            builder.UseStorage(storage);
+        }
+
+        return builder.Build();
+    }
 }
 public sealed record OrderPlaced(string Name) : IEvent;
 public sealed record OrderRenamed(string Name) : IEvent;

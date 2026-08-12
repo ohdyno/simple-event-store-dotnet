@@ -96,7 +96,9 @@ using var subscription = store.Records.Subscribe(record =>
     Console.WriteLine($"{record.Id}: {record.StreamName}/{record.Version}"));
 ```
 
-The observable is synchronized for concurrent producers and keeps a one-item replay buffer.
+The observable is synchronized for concurrent producers and keeps a one-item replay buffer. A subscriber that
+throws from a notification is detached without failing the save, blocking other subscribers, or receiving later
+records.
 
 ## Dependency injection
 
