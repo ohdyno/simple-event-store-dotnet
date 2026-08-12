@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SimpleEventStore/SimpleEventStore.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SimpleEventStore.Tests/SimpleEventStore.Tests.csproj" />
+    <Project Path="tests/SimpleEventStore.PostgreSql.Tests/SimpleEventStore.PostgreSql.Tests.csproj" />
+  </Folder>
+</Solution>
